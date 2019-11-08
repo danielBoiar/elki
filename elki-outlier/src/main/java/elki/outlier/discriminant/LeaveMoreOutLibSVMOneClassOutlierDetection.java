@@ -39,7 +39,6 @@ import elki.math.DoubleMinMax;
 import elki.result.outlier.BasicOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
-import elki.result.outlier.ProbabilisticOutlierScore;
 import elki.utilities.documentation.Reference;
 import elki.utilities.exceptions.AbortException;
 import elki.utilities.optionhandling.OptionID;
@@ -50,39 +49,22 @@ import elki.utilities.optionhandling.constraints.LessConstraint;
 import elki.utilities.optionhandling.constraints.LessEqualConstraint;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.*;
-import java.time.Clock;
 import java.util.*;
-import java.util.function.Predicate;
-import java.util.stream.IntStream;
+
+
 
 /**
- * Outlier-detection using one-class support vector machines.
+ * Leave-One-Out Outlier-detection using support vector machines One Class SVM and Support Vector Data Description.
  * <p>
- * Important note: from literature, the one-class SVM is trained as if 0 was the
- * only counterexample. Outliers will only be detected when they are close to
- * the origin in kernel space! In our experience, results from this method are
- * rather mixed, in particular as you would likely need to tune hyperparameters.
- * Results may be better if you have a training data set with positive examples
- * only, then apply it only to new data (which is currently not supported in
- * this implementation, it assumes a single-dataset scenario).
+ * Leaves one point out of the trainingsset and estimates the distance between the leftout point and the boundary to calculate the score. 
+ * This is repeated for all points. 
  * <p>
- * Reference:
- * <p>
- * B. Schölkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, R. C.
- * Williamson<br>
- * Estimating the support of a high-dimensional distribution<br>
- * Neural computation 13.7
  * 
  * @author Daniel Boiar
  * @since 0.7.6
  *
  * @param <V> vector type
  */
-@Reference(authors = "B. Schölkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, R. C. Williamson", //
-    title = "Estimating the support of a high-dimensional distribution", //
-    booktitle = "Neural computation 13.7", //
-    url = "https://doi.org/10.1162/089976601750264965", //
-    bibkey = "DBLP:journals/neco/ScholkopfPSSW01")
 public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> implements OutlierAlgorithm {
   /**
    * Class logger.
@@ -225,9 +207,8 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
    */
   public OutlierResult run(Relation<V> relation) {
     final int dim = RelationUtil.dimensionality(relation);
-    final ArrayDBIDs ids = DBIDUtil.ensureArray(relation.getDBIDs()); // use StaticArrayDatabase instead?
-    //double[] scoreArray = new double[relation.size()];
-
+    final ArrayDBIDs ids = DBIDUtil.ensureArray(relation.getDBIDs()); 
+    
     svm.svm_set_print_string_function(LOG_HELPER);
 
     svm_parameter param = new svm_parameter();
@@ -266,12 +247,11 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     default:
       throw new AbortException("Invalid kernel parameter: " + kernel);
     }
-    // TODO: expose additional parameters to the end user!
     param.nu = nu;
     param.coef0 = 0.;
     param.cache_size = 10000;
     param.C = C; //used by one-class with C=1 because of scaled version in libsvm, only for svdd! use nu for ocsvm instead. UpperBound is indepent from nu, because Cpositiv = 1 at runSolver.
-    param.eps = 1e-4;//1e-4; // stopping criteria used by one-class in Solver
+    param.eps = 1e-4;//1e-4; // stopping criteria used by one-class or svdd in Solver
     param.p = 0.1; // not used by one-class or svdd! -> p is only used in epsilon svr.
     param.shrinking = 0;
     param.probability = 0;
@@ -290,7 +270,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
       DBIDIter iter = ids.iter();
       for(int i = 0; i < prob.l && iter.valid(); iter.advance(), i++) {
         V vec = relation.get(iter);
-        // TODO: support compact sparse vectors, too!
         svm_node[] x = new svm_node[dim];
         for(int d = 0; d < dim; d++) {
           x[d] = new svm_node();
@@ -299,7 +278,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         }
         prob.x[i] = x;
         prob.y[i] = +1;
-        prob.id[i] = ids.binarySearch(iter); // TODO avoid inefficiency
+        prob.id[i] = ids.binarySearch(iter); 
       }
     }
     if(LOG.isVerbose()) {
@@ -335,11 +314,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     svm_node[] old_x = null;
     int old_id = -1;
     NextOldLeftOutElement nextOldLeftOutElement;
-    //alphaDistributionMethod alphaDistributionMethodParameter = alphaDistributionMethod.RANDOM;
-    //nextLeaveMoreOutElementMethod leaveMoreOutMethod = nextLeaveMoreOutElementMethod.MAXSCORE;
-    //aggregateMethod aggregateMethodParameter = aggregateMethod.WEIGHTED_AVERAGE;//MEDIAN?
     int pathDepth = this.pathdepth; //h
-
     
     //backup G
     double[] G = new double[model.Gradient.length]; 
@@ -357,24 +332,21 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
       //getNextSVIndex
       int nextSVIndex;
       if (smallestPossibleIndex < svIndices.length) {
-        nextSVIndex = svIndices[smallestPossibleIndex]; //assumption: only SV could be outliers -> check only the SV
+        nextSVIndex = svIndices[smallestPossibleIndex]; // only SV could be outliers -> check only the SV
       } else {
         nextSVIndex = -1;
       }
 
       //Init: only at first training for initialization
-      if (init) {
-        //double[] alpha = model.sv_coef[0].clone(); //refresh alpha
-        
+      if (init) {        
         nextOldLeftOutElement = createProb_t(prob, prob_t, t);
         old_x = nextOldLeftOutElement.getNew_x();
         old_id = nextOldLeftOutElement.getNew_id();
         old_t = t;
-        model_t = svmManager.svm_trainGivenCache(prob_t, param);//k�nnte ersetzt werden durch trainGivenAlphaAndCache
+        model_t = svmManager.svm_trainGivenCache(prob_t, param);//securing init correctness
         model_t.param.svm_type = param.svm_type;
         init = false;
         if (t == nextSVIndex - 1) {//Only if t is SV
-          //TODO: check if smallestPossibleIndex++ is correct..
           smallestPossibleIndex++; //If 1 in SV_indices, then nextSVindex needs to be updated in init case
         }
       }else { // no init
@@ -414,15 +386,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
               }
             }
           }
-          /*for (int i = 0; i < alpha.length; i++) {
-            if(i != smallestPossibleIndex) {
-              alpha[i] = model.sv_coef[0][i];//was sind die möglichen indices für sv_coef?
-              svIndices_t[i] = model.sv_indices[i];
-            }else{
-              alpha[smallestPossibleIndex] = model.sv_coef[0][alpha.length];
-              svIndices_t[smallestPossibleIndex] = model.sv_indices[svIndices_t.length];//sollte auch SV_indices ändern oder alpha darf nicht kürzer werden?!
-            }
-          }*/
 
           updateAlphaAndGradient(param, prob, svmManager, G_t,G_bar_t,prob.l, smallestPossibleIndex, model_t, alphaDistributionMethodParameter, t, alpha, svIndices_t, alpha_t);
           nextOldLeftOutElement = createProb_t_WithoutCopy(prob_t, t, old_t, old_x, old_id);
@@ -431,12 +394,9 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
             old_id = nextOldLeftOutElement.getNew_id();
             old_t = t;
           }
-          //createProb_t(prob, prob_t, t); //TODO nicht kopieren sondern swap und ruecktausch
           svmManager.swapCache(t, prob.l - 1);
-          model_t = svmManager.svm_trainGivenAlphaAndCache(prob_t,param,model_t); //TODO wieder aktivieren!!!
-          //model_t = svmManager.svm_trainGivenCache(prob_t,param);
-          svmManager.swapCache(t, prob.l - 1);//TODO: if parameter for activating path, then avoid four swaps of the first element with parameter check
-          
+          model_t = svmManager.svm_trainGivenAlphaAndCache(prob_t,param,model_t); 
+          svmManager.swapCache(t, prob.l - 1);
           if (LOG.isVerbose()) {
             String headerRound = "round,";
             String deletedPoint = "0,";
@@ -467,16 +427,13 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         modelPath.param = new svm_parameter();
         modelPath.param.svm_type = param.svm_type; // used in prediction
         svm_problem probOld = new svm_problem();
-        cloneProb(prob_t,probOld);//fehleranfällig weil nicht gecloned?!!!
-        double[] pathScores = new double[pathDepth]; // TODO change to stack or to one dimensional variable
+        cloneProb(prob_t,probOld);
+        double[] pathScores = new double[pathDepth]; 
         pathScores[0] = score;
         int[] xIndexOnPath = new int[pathDepth]; // array that save the index of the removed element in the proportionate round. xIndexOnPath[round]
         xIndexOnPath[0] = t;
         svmManager.swapCache(t, prob.l - 1);
-        Stack<int[]> swaps = new Stack<int[]>();
-        //int[][] swaps = new int[pathDepth][2]; //for each round save a tupel (swaps[0],swaps[1]) at a swap of the cache for the reversion
-        //swaps[0][0] = t;
-        //swaps[0][1] = prob.l - 1;
+        Stack<int[]> swaps = new Stack<int[]>();// stack of tuples: save changed points
         int[] tupel = new int[2];
         tupel[0] = t;
         tupel[1] = prob.l - 1;
@@ -512,22 +469,9 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
                 double[] bufSlack = new double[svm.svm_get_nr_class(model)];
                 svm.svm_predict_values(modelPath, probOld.x[modelPath.sv_indices[i]-1], bufSlack);
                 double slack = -bufSlack[0];
-                /*if (LOG.isVerbose()) { //TODO remove only for debug
-                  String headerRound = "slack,";
-                  String deletedPoint = slack+",";
-                  for(int dimension = 0; dimension < dim - 1; dimension++){
-                      headerRound += "x"+dimension+",";
-                      deletedPoint += probOld.x[modelPath.sv_indices[i]-1][dimension].value+",";
-                  }
-                  headerRound += "x"+(dim - 1);
-                  deletedPoint += probOld.x[modelPath.sv_indices[i]-1][dim - 1].value;
-                  LOG.verbose(headerRound);
-                  LOG.verbose(deletedPoint);
-                }*/
                 if(slack < 0) {
                   if (LOG.isVerbose()) {LOG.verbose("WARNING! negative Slack");}                     
                 }
-                //slack = 1.0; //TODO hack: every slack SV at bound is deleted with probability 1
                 if(slack > maxSlack) {
                   maxSlack = slack;
                 }
@@ -556,7 +500,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
             }
             if(inRandomSamplingMode) {
               pathDepth = svAtBound.size() + 1; //+1 because of start at round = 1
-              xIndexOnPath = new int[pathDepth]; //TODO eigentlich nicht benoetigt
+              xIndexOnPath = new int[pathDepth]; 
               xIndexOnPath[0] = t;
             }
           }//endif randomSampling
@@ -564,14 +508,14 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
           for (round = 1; round < pathDepth; round++) {
               if(modelPath.sv_indices.length <= 1){//if pathDepth is too long
                 if (LOG.isVerbose()) {LOG.verbose("WARNING! no SV in new model");}
-                break; //TODO wirklich break?
+                break;
               }
               if(randomSampling && inRandomSamplingMode) {
                 int svIndicesJ = svAtBound.poll();
                 //indexJ is the position in svIndices. Search for it.
                 indexJ = -1;
                 for(int i = 0; i < modelPath.sv_indices.length; i++) {
-                  if( modelPath.sv_indices[i] == svIndicesJ ) { // no -1 needed
+                  if( modelPath.sv_indices[i] == svIndicesJ ) {
                     indexJ = i;
                     break;
                   }
@@ -586,14 +530,8 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
               }                
               xIndexOnPath[round] = modelPath.sv_indices[indexJ] - 1; //Element that will be removed
               
-              // evtl problematisch, dass in handleOverBound im array svIndex was geaendert wird. Geloest durch continue!?
-              
-              
-              //svm_node[] xJ = modelPath.SV[indexJ]; // can be an inlier //TODO check if modelPath.SV is correct
               svm_node[] xJ = probOld.x[xIndexOnPath[round]];
-              alphaJ = modelPath.sv_coef[0][indexJ];
-              //printLeftOut(xIndexOnPath,round, randomIndex,modelPath);
-  
+              alphaJ = modelPath.sv_coef[0][indexJ];  
   
               //distribute Alpha and update modelPath's Gradient
               //copy alpha with size--
@@ -717,7 +655,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
   
 
   private void updateAlphaAndGradient(svm_parameter param, svm_problem prob, svm svmManager, double[] G, double[] G_bar, int l, int smallestPossibleIndex, svm_model model_t, alphaDistributionMethod alphaDistributionMethodParameter, int t, double[] alpha, int[] svIndices_t, double alpha_t) {
-    //model_t = svmManager.svm_trainGivenCache(prob_t, param);
     float[] Q_i;
     double delta_alpha_i;
     switch (alphaDistributionMethodParameter){
@@ -753,10 +690,10 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
           double delta_alpha_j_NO_SV = 0 - alpha_t;
           Q_i = svmManager.getQ(randomIndex_NO_SV,G.length);
           float[] Q_j_NO_SV = svmManager.getQ(t,G.length);
-          for(int k=0;k<G.length;k++)//Würde shrinkings active size nicht ausnutzen
+          for(int k=0;k<G.length;k++)
           {
             G[k] += Q_i[k]*delta_alpha_i + Q_j_NO_SV[k]*delta_alpha_j_NO_SV;
-          }//kombinierbar mit "swap G"
+          }
           // update G_bar
           if( (oldAlphaRandomIndex_NO_SV >= param.C && alpha_t_wakened[svIndices_t.length] < param.C) || (oldAlphaRandomIndex_NO_SV < param.C && alpha_t_wakened[svIndices_t.length] >= param.C)){ //upper bound changed check: see svm solver update alpha_status and G_bar
             if( oldAlphaRandomIndex_NO_SV >= param.C){ //is upper bound
@@ -769,14 +706,13 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
                 }
             }
           }
-          //fehler gefunden: Q_j statt Q_i benutzen 
           if( alpha_t >= param.C){ //is upper bound
             for(int k=0;k<l;k++){
                 G_bar[k] -= param.C * Q_j_NO_SV[k]; //upper bound * Q_i[j]
             }
           }else{
             for(int k=0;k<l;k++){
-                G_bar[k] += param.C * Q_j_NO_SV[k];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+                G_bar[k] += param.C * Q_j_NO_SV[k]; 
             }
           }
           model_t.sv_indices = svIndices_t_wakened;
@@ -827,10 +763,10 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         double delta_alpha_j = 0 - alpha_t;
         Q_i = svmManager.getQ(svIndices_t[randomIndex]-1,G.length);
         float[] Q_j = svmManager.getQ(t,G.length);
-        for(int k=0;k<G.length;k++)//Würde shrinkings active size nicht ausnutzen
+        for(int k=0;k<G.length;k++)
         {
           G[k] += Q_i[k]*delta_alpha_i + Q_j[k]*delta_alpha_j;
-        }//kombinierbar mit "swap G"
+        }
         // update G_bar
         if( (oldAlphaRandomIndex >= param.C && alpha[randomIndex] < param.C) || (oldAlphaRandomIndex < param.C && alpha[randomIndex] >= param.C)){ //upper bound changed check: see svm solver update alpha_status and G_bar
           if( oldAlphaRandomIndex >= param.C){ //is upper bound
@@ -839,18 +775,17 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
               }
           }else{
               for(int j=0;j<G_bar.length;j++){
-                  G_bar[j] += param.C * Q_i[j];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+                  G_bar[j] += param.C * Q_i[j];
               }
           }
         }
-        //fehler gefunden: Q_j statt Q_i benutzen 
         if( alpha_t >= param.C){ //is upper bound
           for(int k=0;k<l;k++){
               G_bar[k] -= param.C * Q_j[k]; //upper bound * Q_i[j]
           }
         }else{
           for(int k=0;k<l;k++){
-              G_bar[k] += param.C * Q_j[k];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+              G_bar[k] += param.C * Q_j[k];
           }
         }
 
@@ -874,7 +809,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         //give the max point all alpha of the left out point
         double oldAlphaMaxIndex = alpha[maxIndex];
         alpha[maxIndex] += alpha_t;
-        if(alpha[maxIndex]>param.C){ // TODO: handle upper bound.
+        if(alpha[maxIndex]>param.C){
           if (LOG.isVerbose()) {LOG.verbose("WARNING at sample " + t + "! over upper bound exception");}
           handleOverBound(param, prob, model_t, t, alpha, svIndices_t, new Random(alphaDistributionMethodSeed), maxIndex);
         }else {
@@ -887,10 +822,10 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         double delta_alpha_t = 0 - alpha_t;
         Q_i = svmManager.getQ(svIndices_t[maxIndex]-1,G.length);
         Q_t = svmManager.getQ(t,G.length);
-        for(int k=0;k<G.length;k++)//Würde shrinkings active size nicht ausnutzen
+        for(int k=0;k<G.length;k++)
         {
           G[k] += Q_i[k]*delta_alpha_i + Q_t[k]*delta_alpha_t;
-        }//kombinierbar mit "swap G"
+        }
         // update G_bar
         if( (oldAlphaMaxIndex >= param.C && alpha[maxIndex] < param.C) || (oldAlphaMaxIndex < param.C && alpha[maxIndex] >= param.C)){ //upper bound changed check: see svm solver update alpha_status and G_bar
           if( oldAlphaMaxIndex >= param.C){ //is upper bound
@@ -899,18 +834,17 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
               }
           }else{
               for(int j=0;j<G_bar.length;j++){
-                  G_bar[j] += param.C * Q_i[j];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+                  G_bar[j] += param.C * Q_i[j];
               }
           }
         }
-        //fehler gefunden: Q_t statt Q_i benutzen 
         if( alpha_t >= param.C){ //is upper bound
           for(int k=0;k<l;k++){
               G_bar[k] -= param.C * Q_t[k]; //upper bound * Q_i[j]
           }
         }else{
           for(int k=0;k<l;k++){
-              G_bar[k] += param.C * Q_t[k];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+              G_bar[k] += param.C * Q_t[k];
           }
         }
         break;//Switch
@@ -940,7 +874,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     Random random;
     double[] oldAlpha = alpha.clone();
     if(alphaDistributionMethodParameter==alphaDistributionMethod.PROPORTIONAL) {
-      balanceProportional(param,alpha,alpha_t,prob.l);//oder prob_t.l?
+      balanceProportional(param,alpha,alpha_t,prob.l);
     }else { //Equally
       double delta = alpha_t/alpha.length; //alpha.length needs to be > 0
       for(int i = 0; i < alpha.length; i++) {
@@ -1003,7 +937,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         
       }
       if(!allPointsAreSV) {
-        alphaGrow[alphaGrow.length - 1] = collectCarry % param.C; //rest correct?
+        alphaGrow[alphaGrow.length - 1] = collectCarry % param.C; 
         //bring alpha_old on same length with 0 values
         //svIndices update with random init neq SV
         
@@ -1040,19 +974,19 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
       //update G with i
       delta_alpha_i = model_t.sv_coef[0][i] - alphaOldGrow[i];
       Q_i = svmManager.getQ(svIndices_t[i] - 1, G.length);
-      for (int k = 0; k < l; k++)//Würde shrinkings active size nicht ausnutzen
+      for (int k = 0; k < l; k++)
       {
           G[k] += Q_i[k] * delta_alpha_i;
-      }//kombinierbar mit "swap G"
+      }
       // update G_bar
       if( (alphaOldGrow[i] >= param.C && model_t.sv_coef[0][i] < param.C) || (alphaOldGrow[i] < param.C && model_t.sv_coef[0][i] >= param.C)){ //upper bound changed check: see svm solver update alpha_status and G_bar
         if( oldAlpha[i] >= param.C){ //is upper bound
-          for(int j=0;j<l;j++){ //TODO * param.C
-            G_bar[j] -= Q_i[j]; //upper bound * Q_i[j]
+          for(int j=0;j<l;j++){ 
+            G_bar[j] -= param.C * Q_i[j]; //upper bound * Q_i[j]
           }
         }else{
           for(int j=0;j<l;j++){
-            G_bar[j] += Q_i[j];//G_bar[model.sv_indices[i]-1] += Q_i[j];
+            G_bar[j] += param.C * Q_i[j];
           }
         }
       }
@@ -1069,6 +1003,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
    * @param svIndices_t
    * @param random
    * @param randomIndex
+   * If the leftout alpha distribution leads to overfilling, the carry is distributed to other points.
    */
   private void handleOverBound(svm_parameter param, svm_problem prob, svm_model model_t, int t, double[] alpha, int[] svIndices_t, Random random, int randomIndex) {
     double carry = alpha[randomIndex] - param.C;
@@ -1089,7 +1024,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         }
       }
       if(!allPointsAreSV) {
-        int[] svIndices_t_wakened = new int[svIndices_t.length + 1]; //TODO avoid array copy because of running time
+        int[] svIndices_t_wakened = new int[svIndices_t.length + 1];
         double[] alpha_t_wakened = new double[svIndices_t.length + 1];
         for(int i = 0; i < svIndices_t.length; i++) {
           svIndices_t_wakened[i] = svIndices_t[i];
@@ -1148,16 +1083,13 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     int indexJ = 0;
     switch (leaveMoreOutMethod) {//delete strategies
       case RANDOM://random
-        //long seed = Long.parseLong("1234");
         Random random = new Random(nextLeaveMoreOutElementMethodSeed);
-        indexJ = random.nextInt(modelPath.sv_indices.length); // modelOld ist das neue Modell der letzten Runde, bei der schon ein Punkt weggelassen wurde
+        indexJ = random.nextInt(modelPath.sv_indices.length);
         break;
       case MAXSCORE://get SV from current model which has the maximum score
         double maxScore=Double.NEGATIVE_INFINITY;
-        for (int i = 0; i < modelPath.sv_indices.length; i++) {
-          //svm_node[] xJ = modelPath.SV[i];
-          
-          int idJ = probOld.id[modelPath.sv_indices[i]-1]; //TODO check if correct!
+        for (int i = 0; i < modelPath.sv_indices.length; i++) {          
+          int idJ = probOld.id[modelPath.sv_indices[i]-1]; 
           DBIDRef iterJ = ids.get(idJ);
           double scoreJ = scores.doubleValue(iterJ);
           if( scoreJ > maxScore){
@@ -1173,64 +1105,9 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     return indexJ;
   }
 
-  /**
-   * @param relation database
-   * @param dim Dimension of database
-   * @param ids for new iterator
-   * @param xJ point
-   * @return id of xJ in database
-   *///TODO: Every sample should contain its own id, so that there is no need to search the id
-  private DBIDIter getIDIter(Relation<V> relation, int dim, ArrayDBIDs ids, svm_node[] xJ) {//TODO: more effective with binary search tree
-    //get id of xJ
-    DBIDIter iterJ = ids.iter();
-    V vecJ = null;
-    boolean found = false;
-    while(iterJ.valid() && !found) {
-      vecJ = relation.get(iterJ);
-      if(equals(vecJ,dim,xJ)){
-          found = true; //TODO: case of two points with same coordinates
-      }else {
-          iterJ.advance();
-      }
-    }
-    return iterJ;
-  }
-
-  /**
-   * @param vec Vector from database
-   * @param dim Dimension of the database
-   * @param x svm_node[]
-   * @return Compares vecJ with x2
-   */
-  private boolean equals(V vec,int dim, svm_node[] x) {
-    for (int d = 0; d < dim; d++) {
-      if(Double.compare(x[d].value, vec.doubleValue(d)) != 0){
-        return false;
-      }
-    }
-    return true;
-  }
-
-
-  /**
-   * @deprecated
-   * @param xIndexOnPath
-   * @param rounds
-   * @param j
-   * @param model
-   */
-  private void printLeftOut(int[] xIndexOnPath,int rounds, int j, svm_model model) {
-    System.out.println("nextLeftout");
-    System.out.println(xIndexOnPath[rounds]);
-
-    //System.out.println("j,index,x,y");
-    System.out.println(j + "," + model.SV[j][0].index + "," + model.SV[j][0].value + "," + model.SV[j][1].value);
-    //it can happen that xIndexOnPath[i1] == xIndexOnPath[i2] with different i1, i2, because of the swap: the last element gets the index of the removed element
-  }
-
   private svm_problem cloneProb(svm_problem prob_t, svm_problem probOld) {
     probOld.l = prob_t.l;
-    probOld.x = prob_t.x.clone(); //needs O(l)!!!!
+    probOld.x = prob_t.x.clone(); //needs O(l)!
     probOld.y = prob_t.y;
     probOld.id = prob_t.id.clone();
     return probOld;
@@ -1243,8 +1120,8 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     modelOld.rho = model_t.rho.clone();
     modelOld.sv_coef = model_t.sv_coef.clone();
     modelOld.SV = model_t.SV.clone();
-    modelOld.Gradient = model_t.Gradient;//.clone();
-    modelOld.Gradient_bar = model_t.Gradient_bar;//.clone();
+    modelOld.Gradient = model_t.Gradient;
+    modelOld.Gradient_bar = model_t.Gradient_bar;
     return modelOld;
   }
 
@@ -1252,7 +1129,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     // Estimate Score of t-th Sample
     if (LOG.isVerbose()) {LOG.verbose("Predicting the score of the " + t + "-th Sample...");}
 
-    double norm_w = 0.0;
+    //double norm_w = 0.0;
     if(t != nextSVIndex - 1) {
       svm.svm_predict_values(model_t, x, buf);
       //norm_w = SVMUtils.calculateNorm_w(model_t);
@@ -1261,15 +1138,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
       //norm_w = SVMUtils.calculateNorm_w(model);
     }
     return -buf[0];// / norm_w;
-  }
-
-  private void printQ(svm_problem prob, svm svmManager, svm_model model, int smallestPossibleIndex, int t, int alphaLength) {
-    float[] Q_t = svmManager.getQ(t,prob.l);
-    for(int i = 0; i < alphaLength; i++){
-      if(i != smallestPossibleIndex) {
-        System.out.println(""+t+","+(model.sv_indices[i]-1)+"," +Q_t[model.sv_indices[i]-1]);
-      }
-    }
   }
 
   /**
@@ -1295,14 +1163,12 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
 
 
   public enum alphaDistributionMethod {PROPORTIONAL, EQUALLY, NEIGHBOOR_HIGH_DIM, RANDOM, RANDOM_NO_SV}
-  public enum nextLeaveMoreOutElementMethod {RANDOM, MAXSCORE, NEIGHBOOR_HIGH_DIM} //GRADIENT, ALLSTRATEGIES, VOTING
-      // allstrategies could be a random process that choose every round a new LeaveMoreOutElementMethod
-      // voting could be: estimate next index with all stratgies und take the most chosen one
+  public enum nextLeaveMoreOutElementMethod {RANDOM, MAXSCORE, NEIGHBOOR_HIGH_DIM} 
   public enum aggregateMethod{OVERRIDE, WEIGHTED_AVERAGE} // only if path > 1
 
   private NextOldLeftOutElement createProb_t_WithoutCopy(svm_problem prob_t, int t, int old_t, svm_node[] old_x, int old_id) {
     // create state that the last element is removed
-    svm_node[] lastElement = prob_t.x[old_t]; //TODO case if last element is old_t
+    svm_node[] lastElement = prob_t.x[old_t]; 
     int lastElementID = prob_t.id[old_t];
     prob_t.x[old_t] = old_x;
     prob_t.id[old_t] = old_id;
@@ -1340,10 +1206,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
   
   //Create new Problem with t-th Sample removed
   private NextOldLeftOutElement createProb_t(svm_problem prob, svm_problem prob_t, int t) {
-
-    //double alpha_t = model.sv_coef[0][smallestPossibleIndex]; //indexOutofBounds
-
-    //prob_t = new svm_problem();
     prob_t.l = prob.l - 1;
     prob_t.x = new svm_node[prob.l - 1][];
     prob_t.y = new double[prob.l - 1];
@@ -1354,7 +1216,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     
     for (int i = 0; i < prob.l - 1; i++) {//only till l-1
       if (i != t) {
-        prob_t.x[i] = prob.x[i]; //besser: benutze bestehendes prob und verwende swap and size-- um auszuklammern -> keine erneute zuweisung
+        prob_t.x[i] = prob.x[i]; 
         prob_t.y[i] = +1;
         prob_t.id[i] = prob.id[i];
       } else {
@@ -1372,16 +1234,16 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
   private void adaptAlphaToNewModelSize(svm_model model, svm_problem prob, int smallestPossibleIndex, svm_model model_t, double[] alpha) {
     double[] alphaNew = new double[alpha.length - 1];
     int[] sv_indicesNew = new int[alpha.length -1];
-    svm_node[][] sv = new svm_node[alpha.length -1][];//needs dim?
+    svm_node[][] sv = new svm_node[alpha.length -1][];
     if(prob.l - 1 == model.sv_indices[alpha.length-1] - 1){
-      //last position is SV -> swap -> only delete last position because: last position becomes t
+      // last position is SV -> swap -> only delete last position because: last position becomes t
       for(int i = 0; i< alpha.length - 1 ;i++) { // only till alpha.length - 1
         alphaNew[i] = alpha[i];
         sv_indicesNew[i] = model.sv_indices[i]-1;
         sv[i] = model.SV[i].clone();
       }
       if(smallestPossibleIndex < alphaNew.length) {
-        alphaNew[smallestPossibleIndex] = alpha[alpha.length - 1]; //swap the alpha values, but in the sv_indices there is not swap
+        alphaNew[smallestPossibleIndex] = alpha[alpha.length - 1]; //swap the alpha values, but in the sv_indices there is no swap
       }
     }else{//last position is not a SV -> only delete smallest Possible Index
       for(int i = 0; i< alpha.length;i++) {
@@ -1391,32 +1253,18 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
           sv[i] = model.SV[i].clone();
         } else if (i > smallestPossibleIndex){
           alphaNew[i-1] = alpha[i];
-          sv_indicesNew[i-1] = model.sv_indices[i]-1;//[i]-1 ?
+          sv_indicesNew[i-1] = model.sv_indices[i]-1;
           sv[i-1] = model.SV[i].clone();
         }
 
       }
-      /*if(model.sv_indices[ prob.l - 1 ] == prob.l - 1){
-        sv_indicesNew[ prob.l - 2 ] = smallestPossibleIndex;
-      }*/
       model_t.l--;
     }
-    /*for(int i = 0; i< alpha.length;i++){
-      if(i < smallestPossibleIndex){
-        alphaNew[i] = alpha[i];
-        sv_indicesNew[i] = model.sv_indices[i];
-        sv[i] = model.SV[i].clone();
-      } else if (i > smallestPossibleIndex){
-        alphaNew[i-1] = alpha[i];
-        sv_indicesNew[i-1] = model.sv_indices[i]-1;//-1 because of the compression of LIBSVM
-        sv[i-1] = model.SV[i].clone();
-      }
-    }*/
 
     model_t.sv_coef[0] = alphaNew;
     model_t.sv_indices = sv_indicesNew;
     model_t.SV = sv;
-  }//TODO avoid array copy with Arraylist?
+  }
 
   /**
    * Deletes the t-th alpha, and distributes it over the remaining alpha propotional
@@ -1445,227 +1293,10 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
 
   }
 
-  private void balanceProportionalGivenG(svm_model model, svm_parameter param, double[] alpha, int smallestPossibleIndex, int l, svm svmManager, double[] G, double[] G_bar) {
-    double alpha_t = alpha[smallestPossibleIndex];
-    double vl = param.nu * l;
-    if(vl - alpha_t > 0){
-      for(int i = 0; i < alpha.length; i++){// alpha is compressed
-        double old_alpha_i = alpha[i];
-        alpha[i] *= vl;
-        alpha[i] /= (vl-alpha_t); // distribute alpha_t propotional
-
-
-        double delta_alpha_i = alpha[i] - old_alpha_i;
-        float[] Q_i = svmManager.getQ(model.sv_indices[i]-1,l);
-        for(int j=0;j<l;j++){
-          G[j] += Q_i[j]*delta_alpha_i;//statt G[model.sv_indices[i]-1] besser G[j] see svm solver
-        }
-        //update G_bar
-        if( (old_alpha_i >= 1.0 && alpha[i] < 1.0) || (old_alpha_i < 1.0 && alpha[i] >= 1.0)){ //upper bound changed check: see svm solver update alpha_status and G_bar
-          if( old_alpha_i >= 1.0){ //is upper bound
-            for(int j=0;j<l;j++){
-              G_bar[j] -= Q_i[j]; //upper bound * Q_i[j]
-            }
-          }else{
-            for(int j=0;j<l;j++){
-              G_bar[j] += Q_i[j];//G_bar[model.sv_indices[i]-1] += Q_i[j];
-            }
-          }
-        }
-        //TODO: update alphastatus
-        //assert(vl = sumAlpha = sumAlphaAfterBalance)
-
-      }
-    }else{//Dividing through zero forbidden or negativity
-      for(int i = 0; i < alpha.length; i++){
-        alpha[i] = 0;
-      }
-    }
-
-  }
-
-  private void balanceNeighboorHighDimGivenG(svm_model model, svm_parameter param, double[] alpha, int smallestPossibleIndex, int l, svm svmManager, double[] G, double[] G_bar) {
-    double alpha_t = alpha[smallestPossibleIndex];
-    double vl = param.nu * l;
-    int t = model.sv_indices[smallestPossibleIndex]-1;
-    float normalization = 0;
-    float[] Q_t = svmManager.getQ(t,l);
-    for(int i = 0; i < alpha.length; i++){
-      if(i != smallestPossibleIndex) {
-        normalization += Q_t[model.sv_indices[i]-1]; //TODO: Problem normalization < 1    ->  alpha größer 1
-        System.out.println("Kernel_"+t+","+(model.sv_indices[i]-1)+" = " +Q_t[model.sv_indices[i]-1]);
-      }
-    }
-
-
-    if(vl - alpha_t > 0){
-      for(int i = 0; i < alpha.length; i++){// alpha is compressed
-        double old_alpha_i = alpha[i];
-
-        //Eigentlich muss nur die zwei zeilen ausgetauscht werden: switch case?
-
-        //Q_ti is the simililarity of deleted point t to the point i, which is updated
-        alpha[i] += ( Q_t[model.sv_indices[i]-1] * alpha_t / normalization );// distribute alpha_t with Neighboorinformation in high dim space
-
-
-
-        double delta_alpha_i = alpha[i] - old_alpha_i;
-        float[] Q_i = svmManager.getQ(model.sv_indices[i]-1,l);
-        for(int j=0;j<l;j++){
-          G[j] += Q_i[j]*delta_alpha_i;//statt G[model.sv_indices[i]-1] besser G[j] see svm solver
-        }
-        //update G_bar
-        if( (old_alpha_i >= 1.0 && alpha[i] < 1.0) || (old_alpha_i < 1.0 && alpha[i] >= 1.0)){ //upper bound changed check: see svm solver update alpha_status and G_bar
-          if( old_alpha_i >= 1.0){ //is upper bound
-            for(int j=0;j<l;j++){
-              G_bar[j] -= Q_i[j]; //upper bound * Q_i[j]
-            }
-          }else{
-            for(int j=0;j<l;j++){
-              G_bar[j] += Q_i[j];//G_bar[model.sv_indices[i]-1] += Q_i[j];
-            }
-          }
-        }
-        //TODO: update alphastatus
-        //assert(vl = sumAlpha = sumAlphaAfterBalance)
-
-      }
-    }else{//Dividing through zero forbidden or negativity
-      for(int i = 0; i < alpha.length; i++){
-        alpha[i] = 0;
-      }
-    }
-
-  }
-
-/*
-  private void updateG(){
-    // update G
-    for(int i : alpha)
-    double delta_alpha_i = alpha[i] - old_alpha_i;
-
-    for(int i=0;i<active_size;++)
-    {
-      G[k] += Q_i[k]*delta_alpha_i + Q_j[k]*delta_alpha_j;
-    }
-
-    // update alpha_status and G_bar
-
-    {
-      boolean ui = is_upper_bound(i);
-      boolean uj = is_upper_bound(j);
-      update_alpha_status(i);
-      update_alpha_status(j);
-      int k;
-      if(ui != is_upper_bound(i))
-      {
-        Q_i = Q.get_Q(i,l);
-        if(ui)
-          for(k=0;k<l;k++)
-            G_bar[k] -= C_i * Q_i[k];
-        else
-          for(k=0;k<l;k++)
-            G_bar[k] += C_i * Q_i[k];
-      }
-
-
-      if(uj != is_upper_bound(j))
-      {
-        Q_j = Q.get_Q(j,l);
-        if(uj)
-          for(k=0;k<l;k++)
-            G_bar[k] -= C_j * Q_j[k];
-        else
-          for(k=0;k<l;k++)
-            G_bar[k] += C_j * Q_j[k];
-      }
-    }
-  }
-*/
-
-  /**
-   * Deletes the t-th alpha, and distributes it over the remaining alpha equally
-   *
-   * @param param SVM Parameter
-   * @param smallestPossibleIndex Index von t-th alpha
-   * @param alpha Array of alpha > 0
-   */
-  private static void balance(svm_parameter param, int smallestPossibleIndex, double[] alpha) {
-    // Distribute alpha_t equally on remaining alpha not at bound. Assumption: there exists two alphas not bounded
-    // Andere Möglichkeiten austesten! Alle SV nicht an Grenzen halten, oder Greedy aufteilen
-
-    //TODO check the usage of param.C
-
-    double alpha_t = alpha[smallestPossibleIndex]; // because LIBSVM changes size of sv_coef
-        /* FROM LIBSVM.svm training
-        for(i=0;i<prob.l;i++)
-          if(Math.abs(f.alpha[i]) > 0)
-          {
-            model.SV[j] = prob.x[i];
-            model.sv_coef[0][j] = f.alpha[i];
-            model.sv_indices[j] = i+1;
-            ++j;
-          }
-        }*/
-    double sumResidualsAlphaNotAtBound  = 0.0;
-    double sumSVnotAtBound = 0.0;
-    ArrayList<Integer> indicesSVnotAtBound = new ArrayList<Integer>();
-    for(int i = 0; i < alpha.length; i++){
-      if( i != smallestPossibleIndex && alpha[i] != param.C ){
-        sumSVnotAtBound += alpha[i];
-        sumResidualsAlphaNotAtBound += param.C - alpha[i];
-        indicesSVnotAtBound.add(i);
-      }
-    }
-    Predicate<Integer> isNegative = new Predicate<Integer>() {
-      @Override
-      public boolean test(Integer integer) {
-        return integer < 0;
-      }
-    };
-
-    if(sumResidualsAlphaNotAtBound >= alpha_t) { // distribute equally possible (balance)
-      double toDistributeOld = alpha_t / indicesSVnotAtBound.size();
-      double toDistributeNew = 0.0;
-      int maxIter = 100;
-      int countIter = 0;
-      while(!indicesSVnotAtBound.isEmpty() && toDistributeOld > 0.0000001 && countIter < maxIter){ //threshold? < 0.00001 or maxIteration
-        for(int i = 0; i<indicesSVnotAtBound.size(); i++){
-          // Handle Bounds carefully
-          if(alpha[indicesSVnotAtBound.get(i)] + toDistributeOld >= param.C ){ // distribute failed
-            toDistributeNew += alpha[indicesSVnotAtBound.get(i)] + toDistributeOld - param.C;
-            alpha[indicesSVnotAtBound.get(i)] = param.C;
-            indicesSVnotAtBound.set(i,-1);
-          }else{ // distribute successful
-            alpha[indicesSVnotAtBound.get(i)] += toDistributeOld;
-          }
-        }
-        indicesSVnotAtBound.removeIf( isNegative );
-        toDistributeOld = (!indicesSVnotAtBound.isEmpty()) ? (toDistributeNew / indicesSVnotAtBound.size()) : 0;
-        toDistributeNew = 0.0;
-        countIter++;
-      }
-    }else{ // balance not possible
-      // invoke a not-SV
-
-      // set all alpha from indicesSVnotAtBound to Bound
-      // remainder becomes new alpha (in the neighboorhood of the t-th sample?)
-
-      //Hack: set all alpha to C. Problem: Condition sum v_i = alpha_t not fulfilled
-      for(int i = 0; i<alpha.length;i++){
-        alpha[i] = param.C;
-      }
-    }
-    //alpha[smallestPossibleIndex] = 0;
-  }
-
-
-
   @Override
   public TypeInformation[] getInputTypeRestriction() {
     return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
   }
-
 
   /**
    * Setup logging helper for SVM.

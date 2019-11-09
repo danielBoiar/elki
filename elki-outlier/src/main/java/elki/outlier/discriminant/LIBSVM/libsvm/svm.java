@@ -442,8 +442,8 @@ class Solver {
 			alpha_status = new byte[l];
 			for(int i=0;i<l;i++)
 				update_alpha_status(i);
-		}//TODO: update only the alpha status of the alphas which has been changed
-
+		}
+		
 		// initialize active set (for shrinking)
 		{
 			active_set = new int[l];
@@ -463,7 +463,7 @@ class Solver {
 				G_bar[i] = 0;
 			}
 			for(i=0;i<l;i++)
-				if(!is_lower_bound(i)) //TODO: es ist klar, über welche supportvectoren iteriert wird um g berechnen
+				if(!is_lower_bound(i))
 				{
 					float[] Q_i = Q.get_Q(i,l);
 					double alpha_i = alpha[i];
@@ -474,7 +474,7 @@ class Solver {
 						for(j=0;j<l;j++)
 							G_bar[j] += get_C(i) * Q_i[j];
 				}
-		}//TODO: reuse gradient and only change the gradient of those alphas, which has been changed
+		}
 
 
 
@@ -700,7 +700,7 @@ class Solver {
 		this.l = l;
 		this.Q = Q;
 		QD = Q.get_QD();
-		p = (double[])p_.clone(); //Clonen überhaupt notwendig?
+		p = (double[])p_.clone();
 		y = (byte[])y_.clone();
 		alpha = (double[])alpha_.clone();
 		this.Cp = Cp;
@@ -713,8 +713,8 @@ class Solver {
 			alpha_status = new byte[l];
 			for(int i=0;i<l;i++)
 				update_alpha_status(i);
-		}//TODO: update only the alpha status of the alphas which has been changed
-
+		}
+		
 		// initialize active set (for shrinking)
 		{
 			active_set = new int[l];
@@ -724,12 +724,9 @@ class Solver {
 		}
 
 		// initialize gradient in LeaveOneOutLibSVMOneClassOutlierDetection.java
-		{
-			//assumption: G and G_bar already init
-			//assumtion: t is a SV //TODO: es ist klar, über welche supportvectoren iteriert wird um g berechnen
-		}//TODO: reuse gradient and only change the gradient of those alphas, which has been changed
-
-
+	  // assumption: G and G_bar already init
+		// reuse gradient and only change the gradient of those alphas, which has been changed
+		
 
 		// optimization step
 
@@ -758,11 +755,9 @@ class Solver {
 				svm.info("*");
 				if(select_working_set(working_set)!=0)
 					break;
-					//start nachtrainieren möglich
 				else
 					counter = 1;	// do shrinking next iteration
 			}
-			//evtl zwingen, dass SV genommen werden für die ersten iterationen?
 			int i = working_set[0];
 			int j = working_set[1];
 
@@ -959,16 +954,13 @@ class Solver {
 		//    (if quadratic coefficeint <= 0, replace it with tau)
 		//    -y_j*grad(f)_j < -y_i*grad(f)_i, j in I_low(\alpha)
 
-
-		//TODO: teile herausgelassenes alpha anhand der gradienten auf (Porpotional: wenn hohen gradient bekommt er auch viel)?
-		//ABER Gradienten sind nach optimierung gleich 0
 		double Gmax = -INF;
 		double Gmax2 = -INF;
 		int Gmax_idx = -1;
 		int Gmin_idx = -1;
 		double obj_diff_min = INF;
 
-		for(int t=0;t<active_size;t++)//TODO: statt linear maximum zu suchen besser mit sortierter liste?
+		for(int t=0;t<active_size;t++)
 			if(y[t]==+1)
 			{
 				if(!is_upper_bound(t))
@@ -1700,6 +1692,13 @@ public class svm {
 		si.upper_bound_n = 1/r;
 	}
 
+	/**
+	 * start solver with init alpha as expected
+	 * @param prob
+	 * @param param
+	 * @param alpha
+	 * @param si
+	 */
 	private static void solve_one_class(svm_problem prob, svm_parameter param,
 					double[] alpha, Solver.SolutionInfo si)
 	{
@@ -1725,9 +1724,17 @@ public class svm {
 
 		Solver s = new Solver();
 		s.Solve(l, new ONE_CLASS_Q(prob,param), zeros, ones,
-			alpha, 1.0, 1.0, param.eps, si, param.shrinking); // Why C = 1 and not min( 1/vl , 1 )
+			alpha, 1.0, 1.0, param.eps, si, param.shrinking); 
 	}
 
+	/**
+	 * start solver with the alpha calculated before in the LeaveMoreOut class for one class svm
+	 * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param alpha is an empty array
+   * @param si SolutionInfo is an empty tupel of results 
+	 * @param model_t contains calculated SV Indices and Coef
+	 */
 	private static void solve_one_classGivenAlpha(svm_problem prob, svm_parameter param,
 										double[] alpha, Solver.SolutionInfo si, svm_model model_t)
 	{
@@ -1736,15 +1743,6 @@ public class svm {
 		byte[] ones = new byte[l];
 		int i;
 
-		/*int n = (int)(param.nu*prob.l);	// # of alpha's at upper bound
-
-		for(i=0;i<n;i++)
-			alpha[i] = 1;
-		if(n<prob.l)
-			alpha[n] = param.nu * prob.l - n;
-		for(i=n+1;i<l;i++)
-			alpha[i] = 0;
-		*/
 		for(i=0; i < l; i++){
 			alpha[i]=0;
 		}
@@ -1764,6 +1762,15 @@ public class svm {
 				alpha, 1.0, 1.0, param.eps, si, param.shrinking);
 	}
 
+	/**
+	 * start solver with the alpha and cache calculated before in the LeaveMoreOut class for one class svm
+	 * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param alpha is an empty array
+   * @param si SolutionInfo is an empty tupel of results 
+	 * @param model_t contains calculated SV Indices and Coef
+	 * @param cache reuses the kernel cache Q from the LeaveMoreOut class 
+	 */
 	private void solve_one_classGivenAlphaAndCache(svm_problem prob, svm_parameter param,
 												  double[] alpha, Solver.SolutionInfo si, svm_model model_t, ONE_CLASS_Q cache)
 	{
@@ -1772,20 +1779,12 @@ public class svm {
 		byte[] ones = new byte[l];
 		int i;
 
-		/*int n = (int)(param.nu*prob.l);	// # of alpha's at upper bound
-
-		for(i=0;i<n;i++)
-			alpha[i] = 1;
-		if(n<prob.l)
-			alpha[n] = param.nu * prob.l - n;
-		for(i=n+1;i<l;i++)
-			alpha[i] = 0;
-		*/
 		for(i=0; i < l; i++){
 			alpha[i]=0;
 		}
-		for(i = 0; i < model_t.sv_indices.length; i++){//TODO: catch up exception if only one SV
-			alpha[model_t.sv_indices[i]-1] = model_t.sv_coef[0][i];//index out of bounds wenn t >= l-1
+		//reuse calculated alpha
+		for(i = 0; i < model_t.sv_indices.length; i++){
+			alpha[model_t.sv_indices[i]-1] = model_t.sv_coef[0][i];
 		}
 
 
@@ -1795,13 +1794,22 @@ public class svm {
 			ones[i] = 1;
 		}
 
-		Solver s = new Solver(G,G_bar);
+		Solver s = new Solver(G,G_bar); // reuse gradient
 		s.SolveGivenG(l, cache, zeros, ones,
 				alpha, 1.0, 1.0, param.eps, si, param.shrinking);
 		G = s.getG().clone();
 		G_bar = s.getG_bar().clone();
 	}
 
+	
+	/**
+	 * start solver with the cache calculated before in the LeaveMoreOut class for one class svm
+	 * @param prob is the svm problem containing the trainingsset of points
+	 * @param param are the model parameter
+	 * @param alpha is an empty  
+	 * @param si SolutionInfo is an empty tupel of results 
+	 * @param cache reuses the kernel cache Q from the LeaveMoreOut class
+	 */
 	private void solve_one_classGivenCache(svm_problem prob, svm_parameter param,
 												  double[] alpha, Solver.SolutionInfo si, ONE_CLASS_Q cache)
 	{
@@ -1833,6 +1841,13 @@ public class svm {
 		G_bar = s.getG_bar().clone();
 	}
 	
+	/**
+	 * start solver for svdd
+	 * @param prob
+	 * @param param
+	 * @param alpha
+	 * @param si
+	 */
 	private static void solve_svdd(svm_problem prob, svm_parameter param,
       double[] alpha, Solver.SolutionInfo si)
   {
@@ -1899,7 +1914,16 @@ public class svm {
     if(C <= 1.0 / l)
       info("Warning: R^* = 0 for C <= 1/#instances.\n");
   }
-
+	
+	/**
+   * start solver with the alpha and cache calculated before in the LeaveMoreOut class for svdd
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param alpha is an empty array
+   * @param si SolutionInfo is an empty tupel of results 
+   * @param model_t contains calculated SV Indices and Coef
+   * @param cache reuses the kernel cache Q from the LeaveMoreOut class 
+   */
 	private void solve_svddGivenAlphaAndCache(svm_problem prob, svm_parameter param,
       double[] alpha, Solver.SolutionInfo si, svm_model model_t, ONE_CLASS_Q cache)
   {
@@ -1923,8 +1947,8 @@ public class svm {
         alpha[i] = 0;
         ones[i] = 1;
       }
-      for(i = 0; i < model_t.sv_indices.length; i++){//TODO: catch up exception if only one SV
-        alpha[model_t.sv_indices[i]-1] = model_t.sv_coef[0][i];//index out of bounds wenn t >= l-1
+      for(i = 0; i < model_t.sv_indices.length; i++){
+        alpha[model_t.sv_indices[i]-1] = model_t.sv_coef[0][i];
       }
     
       Solver s = new Solver(G,G_bar);
@@ -1969,7 +1993,14 @@ public class svm {
     }
   }
 
-	
+	/**
+   * start solver with the cache calculated before in the LeaveMoreOut class for svdd
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param alpha is an empty  
+   * @param si SolutionInfo is an empty tupel of results 
+   * @param cache reuses the kernel cache Q from the LeaveMoreOut class
+   */
 	private void solve_svddGivenCache(svm_problem prob, svm_parameter param,
       double[] alpha, Solver.SolutionInfo si, ONE_CLASS_Q cache)
   {
@@ -2149,7 +2180,6 @@ public class svm {
 
 		int nSV = 0;
 		int nBSV = 0;
-		//svm.info("index,alpha,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10");
 		String header = "index,alpha,";
 		int dim = prob.x[0].length;
 		for(int dimension = 0; dimension < dim - 1; dimension++){
@@ -2263,7 +2293,18 @@ public class svm {
 		f.rho = si.rho;
 		return f;
 	}
-
+	
+	
+	
+	/**
+	 * call the starting function of the solver and maintain solutions
+	 * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+	 * @param Cp upper bound of positives (is not used and set to 1 in one class svm)
+	 * @param Cn upper bound of negatives (is not used and set to 1 in one class svm)
+	 * @param model_t contains calculated SV Indices and Coef
+	 * @return decision_function containing alpha and roh
+	 */
 	static decision_function svm_train_oneGivenAlpha(
 			svm_problem prob, svm_parameter param,
 			double Cp, double Cn, svm_model model_t)
@@ -2323,6 +2364,16 @@ public class svm {
 		return f;
 	}
 
+	/**
+	 /**
+   * call the starting function of the solver and maintain solutions
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param Cp upper bound of positives (is not used and set to 1 in one class svm)
+   * @param Cn upper bound of negatives (is not used and set to 1 in one class svm)
+   * @param cache reuses the kernel cache Q from the LeaveMoreOut class
+   * @return decision_function containing alpha and roh
+	 */
 	decision_function svm_train_oneGivenCache(
 			svm_problem prob, svm_parameter param,
 			double Cp, double Cn, ONE_CLASS_Q cache)
@@ -2773,6 +2824,12 @@ public class svm {
 	//
 	// Interface functions
 	//
+	/**
+	 * start the svm training depending on the svm_type in param
+	 * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+	 * @return svm_model containing alpha, SV indices, SV and roh
+	 */
 	public static svm_model svm_train(svm_problem prob, svm_parameter param)
 	{
 		svm_model model = new svm_model();
@@ -3010,6 +3067,12 @@ public class svm {
 		return model;
 	}
 
+	/**
+   * start the svm training depending on the svm_type in param and the cache that is set in the svm object's attribute cacheOneClassSVM
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @return svm_model containing alpha, SV indices, SV and roh
+   */
 	public svm_model svm_trainGivenCache(svm_problem prob, svm_parameter param)
 	{
 		svm_model model = new svm_model();
@@ -3249,6 +3312,13 @@ public class svm {
 		return model;
 	}
 
+	/**
+   * start the svm training depending on the svm_type in param and the precalculated alpha
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param model_t contains calculated SV Indices and Coef
+   * @return svm_model containing alpha, SV indices, SV and roh
+   */
 	public static svm_model svm_trainGivenAlpha(svm_problem prob, svm_parameter param, svm_model model_t)
 	{
 		svm_model model = new svm_model();
@@ -3485,6 +3555,13 @@ public class svm {
 		return model;
 	}
 
+	/**
+   * start the svm training depending on the svm_type in param, the precalculated alpha in model_t and the cache that is set in the svm object's attribute cacheOneClassSVM
+   * @param prob is the svm problem containing the trainingsset of points
+   * @param param are the model parameter
+   * @param model_t contains calculated SV Indices and Coef
+   * @return svm_model containing alpha, SV indices, SV and roh
+   */
 	public svm_model svm_trainGivenAlphaAndCache(svm_problem prob, svm_parameter param, svm_model model_t)
 	{
 		svm_model model = new svm_model();
@@ -3875,7 +3952,14 @@ public class svm {
 			return 0;
 		}
 	}
-
+	
+  /**
+   * Predict the outcome of the testpoint x with the model and write the solution in the buffer dec_values
+   * @param model: trained model that is used for predicting the outcome of x
+   * @param x testpoint
+   * @param dec_values buffer that contains the prediction
+   * @return 1 if prediction > 0. Otherwise -1
+   */
 	public static double svm_predict_values(svm_model model, svm_node[] x, double[] dec_values)
 	{
 		int i;
@@ -3958,23 +4042,6 @@ public class svm {
 
 			return model.label[vote_max_idx];
 		}
-	}
-
-	public static double svm_predict_valuesGivenAlpha(svm_model model, svm_node[] x, double[] dec_values)
-	{
-		int i;
-		// Assume: model.param.svm_type == svm_parameter.ONE_CLASS
-		double[] sv_coef = model.sv_coef[0];
-		double sum = 0;
-		for(i=0;i<sv_coef.length;i++)
-			sum += sv_coef[i] * Kernel.k_function(x,model.SV[i],model.param);
-		sum -= model.rho[0];
-		dec_values[0] = sum;
-
-		if(model.param.svm_type == svm_parameter.ONE_CLASS)
-			return (sum>0)?1:-1;
-		else
-			return sum;
 	}
 
 	public static double svm_predict(svm_model model, svm_node[] x)

@@ -97,9 +97,7 @@ public class SVMUtils {
                 return 0;	// java
         }
     }
-    /**
-     * Assumption: call after prediction SVM. Otherwise: Between Train and Test: IndexOutOfBounce Error, because LIBSVM change sv_coef.length
-     */
+
     public static double calculateNorm_w(svm_model model) {
         //estimate norm w for rescaling score
         double[] sv_coef = model.sv_coef[0];

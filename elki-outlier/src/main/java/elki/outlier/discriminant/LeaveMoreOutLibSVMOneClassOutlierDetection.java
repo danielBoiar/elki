@@ -20,7 +20,6 @@
  */
 package elki.outlier.discriminant;
 
-import elki.Algorithm;
 import elki.outlier.OutlierAlgorithm;
 import elki.outlier.discriminant.LIBSVM.libsvm.*;
 import elki.data.NumberVector;
@@ -39,7 +38,6 @@ import elki.math.DoubleMinMax;
 import elki.result.outlier.BasicOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
-import elki.utilities.documentation.Reference;
 import elki.utilities.exceptions.AbortException;
 import elki.utilities.optionhandling.OptionID;
 import elki.utilities.optionhandling.Parameterizer;
@@ -674,7 +672,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         }
         if(!allPointsAreSV) {
           //Copy and resize
-          int[] svIndices_t_wakened = new int[svIndices_t.length + 1]; //TODO avoid array copy because of running time
+          int[] svIndices_t_wakened = new int[svIndices_t.length + 1]; 
           double[] alpha_t_wakened = new double[svIndices_t.length + 1];
           for(int i = 0; i < svIndices_t.length; i++) {
             svIndices_t_wakened[i] = svIndices_t[i];
@@ -747,11 +745,8 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         //give the random point all alpha of the left out point
         double oldAlphaRandomIndex = alpha[randomIndex];
         alpha[randomIndex] += alpha_t;
-        if(alpha[randomIndex]>param.C){ // TODO: handle upper bound.
+        if(alpha[randomIndex]>param.C){
           if (LOG.isVerbose()) {LOG.verbose("WARNING at sample " + t + "! over upper bound warning");}
-          if(t==63) {
-            if (LOG.isVerbose()) {LOG.verbose("breakpoint");}
-          }
           handleOverBound(param, prob, model_t, t, alpha, svIndices_t, random, randomIndex);//wird danach ueberhaupt der Gradient geupdatet?
         }else {
           model_t.sv_coef[0] = alpha;
@@ -796,7 +791,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
       case EQUALLY:
         proportional(param, prob, svmManager, G, G_bar, l, model_t, t, alpha, svIndices_t, alpha_t,alphaDistributionMethodParameter);
         break;//Switch
-      case NEIGHBOOR_HIGH_DIM:
+      case NEIGHBOR_HIGH_DIM:
         float[] Q_t = svmManager.getQ(t,prob.l);
         int maxIndex = -1;
         float maxQ = Float.NEGATIVE_INFINITY;
@@ -1098,7 +1093,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
           }
         }
         break;
-      case NEIGHBOOR_HIGH_DIM:
+      case NEIGHBOR_HIGH_DIM:
         indexJ = getMaxQ(probOld,svmManager,modelPath,swaps.lastElement()[1]);// if xIndexOnPath is changed in the cache in round before, then backwartsSwap with use of swaps
         break;
     }
@@ -1162,8 +1157,8 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
   }
 
 
-  public enum alphaDistributionMethod {PROPORTIONAL, EQUALLY, NEIGHBOOR_HIGH_DIM, RANDOM, RANDOM_NO_SV}
-  public enum nextLeaveMoreOutElementMethod {RANDOM, MAXSCORE, NEIGHBOOR_HIGH_DIM} 
+  public enum alphaDistributionMethod {PROPORTIONAL, EQUALLY, NEIGHBOR_HIGH_DIM, RANDOM, RANDOM_NO_SV}
+  public enum nextLeaveMoreOutElementMethod {RANDOM, MAXSCORE, NEIGHBOR_HIGH_DIM} 
   public enum aggregateMethod{OVERRIDE, WEIGHTED_AVERAGE} // only if path > 1
 
   private NextOldLeftOutElement createProb_t_WithoutCopy(svm_problem prob_t, int t, int old_t, svm_node[] old_x, int old_id) {
@@ -1228,42 +1223,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
 
     return new NextOldLeftOutElement(old_x, old_id);
     //Alpha Swap in adaptModelSize()
-  }
-
-  // adapt old Alpha size to new Model size
-  private void adaptAlphaToNewModelSize(svm_model model, svm_problem prob, int smallestPossibleIndex, svm_model model_t, double[] alpha) {
-    double[] alphaNew = new double[alpha.length - 1];
-    int[] sv_indicesNew = new int[alpha.length -1];
-    svm_node[][] sv = new svm_node[alpha.length -1][];
-    if(prob.l - 1 == model.sv_indices[alpha.length-1] - 1){
-      // last position is SV -> swap -> only delete last position because: last position becomes t
-      for(int i = 0; i< alpha.length - 1 ;i++) { // only till alpha.length - 1
-        alphaNew[i] = alpha[i];
-        sv_indicesNew[i] = model.sv_indices[i]-1;
-        sv[i] = model.SV[i].clone();
-      }
-      if(smallestPossibleIndex < alphaNew.length) {
-        alphaNew[smallestPossibleIndex] = alpha[alpha.length - 1]; //swap the alpha values, but in the sv_indices there is no swap
-      }
-    }else{//last position is not a SV -> only delete smallest Possible Index
-      for(int i = 0; i< alpha.length;i++) {
-        if(i < smallestPossibleIndex){
-          alphaNew[i] = alpha[i];
-          sv_indicesNew[i] = model.sv_indices[i]-1;
-          sv[i] = model.SV[i].clone();
-        } else if (i > smallestPossibleIndex){
-          alphaNew[i-1] = alpha[i];
-          sv_indicesNew[i-1] = model.sv_indices[i]-1;
-          sv[i-1] = model.SV[i].clone();
-        }
-
-      }
-      model_t.l--;
-    }
-
-    model_t.sv_coef[0] = alphaNew;
-    model_t.sv_indices = sv_indicesNew;
-    model_t.SV = sv;
   }
 
   /**
@@ -1546,7 +1505,6 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         alphaDistributionMethodSeed = alphaDistributionMethodSeedP.getValue();
       }
       
-      //TODO rename NextLeaveSomeOutElementMethod
       LongParameter nextLeaveMoreOutElementMethodSeedP = new LongParameter(NEXT_LEAVE_MORE_OUT_ELEMENT_METHOD_SEED_ID, Long.parseLong("5432"));
       if(config.grab(nextLeaveMoreOutElementMethodSeedP)) {
         nextLeaveMoreOutElementMethodSeed = nextLeaveMoreOutElementMethodSeedP.getValue();

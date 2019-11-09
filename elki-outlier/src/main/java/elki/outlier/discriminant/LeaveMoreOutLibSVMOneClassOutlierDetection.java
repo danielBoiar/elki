@@ -552,15 +552,13 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
                     svIndices_t[i] = modelPath.sv_indices[i];
                   } else if (i > indexJ) {
                     alpha[i - 1] = modelPath.sv_coef[0][i];
-                    svIndices_t[i - 1] = modelPath.sv_indices[i];//[i]-1 ?
+                    svIndices_t[i - 1] = modelPath.sv_indices[i];
                   }
                 }
               }
   
               updateAlphaAndGradient(param, probOld,svmManager,modelPath.Gradient,modelPath.Gradient_bar,probOld.l,indexJ,modelPath,alphaDistributionMethodParameter,xIndexOnPath[round],alpha,svIndices_t,alphaJ);
               svmManager.swapCache(xIndexOnPath[round], probOld.l - 1);
-              //swaps[round][0] = xIndexOnPath[round];
-              //swaps[round][1] = probOld.l-1;
               tupel = new int[2];
               tupel[0] = xIndexOnPath[round];
               tupel[1] = probOld.l-1;
@@ -635,8 +633,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
 
         if (LOG.isVerbose()) {LOG.verbose("End Pathtracing in the " + t + "-th Sample...");}
       }
-        //erledigt: es muss auf den neu rausgelassenen Punkt getestet werden und dessen score geupdatet werden. PROBLEM:Iterator
-
+       
       //for normal case with pathDepth == 1
       scores.putDouble(iter, score);// puts the score of t and not the pathPoints
       mm.put(score);
@@ -1307,7 +1304,7 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
     /**
      * SVM_LOO pathdepth parameter
      */
-    public static final OptionID PATHDEPTH_ID = new OptionID("svm.pathdepth", "SVM pathdepth parameter. Greater then #instances.");
+    public static final OptionID PATHDEPTH_ID = new OptionID("svm.pathdepth", "SVM pathdepth parameter. Greater 1 activates further pathdepth options.");
 
     /**
      * SVM_LOO zeta parameter
@@ -1453,18 +1450,20 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         kernel = kernelP.getValue();
       }
 
-      DoubleParameter nuP = new DoubleParameter(NU_ID, 0.05);
-      nuP.addConstraint(new GreaterConstraint(0));
-      nuP.addConstraint(new LessConstraint(1));
-      if(config.grab(nuP)) {
-        nu = nuP.doubleValue();
-      }
-      
-      DoubleParameter CP = new DoubleParameter(C_ID, 1.0);
-      CP.addConstraint(new GreaterConstraint(0));
-      CP.addConstraint(new LessEqualConstraint(1));
-      if(config.grab(CP)) {
-        C = CP.doubleValue();
+      if(type == SVMType.ONE_CLASS) {
+        DoubleParameter nuP = new DoubleParameter(NU_ID, 0.05);
+        nuP.addConstraint(new GreaterConstraint(0));
+        nuP.addConstraint(new LessConstraint(1));
+        if(config.grab(nuP)) {
+          nu = nuP.doubleValue();
+        }
+      } else {
+        DoubleParameter CP = new DoubleParameter(C_ID, 1.0);
+        CP.addConstraint(new GreaterConstraint(0));
+        CP.addConstraint(new LessEqualConstraint(1));
+        if(config.grab(CP)) {
+          C = CP.doubleValue();
+        }
       }
       
       DoubleParameter gammaP = new DoubleParameter(GAMMA_ID, 0.5);
@@ -1483,54 +1482,57 @@ public class LeaveMoreOutLibSVMOneClassOutlierDetection<V extends NumberVector> 
         alphaDistributionMethodParameter = alphaDistributionMethodP.getValue();
       }
       
-      EnumParameter<aggregateMethod> aggregateMethodP = new EnumParameter<>(AGGREGATE_METHOD_ID, aggregateMethod.class, aggregateMethod.WEIGHTED_AVERAGE);
-      if(config.grab(aggregateMethodP)) {
-        aggregateMethodParameter = aggregateMethodP.getValue();
-      }
-      
-      EnumParameter<nextLeaveMoreOutElementMethod> nextLeaveMoreOutElementMethodP = new EnumParameter<>(NEXT_LEAVE_MORE_OUT_ELEMENT_METHOD_ID, nextLeaveMoreOutElementMethod.class, nextLeaveMoreOutElementMethod.RANDOM);
-      if(config.grab(nextLeaveMoreOutElementMethodP)) {
-        nextLeaveMoreOutElementMethodParameter = nextLeaveMoreOutElementMethodP.getValue();
-      }
-      
-      DoubleParameter zetaP = new DoubleParameter(ZETA_ID, 0.7);
-      zetaP.addConstraint(new LessEqualConstraint(1));
-      zetaP.addConstraint(new GreaterEqualConstraint(0));
-      if(config.grab(zetaP)) {
-        zeta = zetaP.doubleValue();
-      }
-      
       LongParameter alphaDistributionMethodSeedP = new LongParameter(ALPHA_DISTRIBUTION_METHOD_SEED_ID, Long.parseLong("4321"));
       if(config.grab(alphaDistributionMethodSeedP)) {
         alphaDistributionMethodSeed = alphaDistributionMethodSeedP.getValue();
       }
       
-      LongParameter nextLeaveMoreOutElementMethodSeedP = new LongParameter(NEXT_LEAVE_MORE_OUT_ELEMENT_METHOD_SEED_ID, Long.parseLong("5432"));
-      if(config.grab(nextLeaveMoreOutElementMethodSeedP)) {
-        nextLeaveMoreOutElementMethodSeed = nextLeaveMoreOutElementMethodSeedP.getValue();
+      if(pathdepth > 1) {
+        EnumParameter<aggregateMethod> aggregateMethodP = new EnumParameter<>(AGGREGATE_METHOD_ID, aggregateMethod.class, aggregateMethod.WEIGHTED_AVERAGE);
+        if(config.grab(aggregateMethodP)) {
+          aggregateMethodParameter = aggregateMethodP.getValue();
+        }
+        
+        EnumParameter<nextLeaveMoreOutElementMethod> nextLeaveMoreOutElementMethodP = new EnumParameter<>(NEXT_LEAVE_MORE_OUT_ELEMENT_METHOD_ID, nextLeaveMoreOutElementMethod.class, nextLeaveMoreOutElementMethod.RANDOM);
+        if(config.grab(nextLeaveMoreOutElementMethodP)) {
+          nextLeaveMoreOutElementMethodParameter = nextLeaveMoreOutElementMethodP.getValue();
+        }
+        
+        DoubleParameter zetaP = new DoubleParameter(ZETA_ID, 0.7);
+        zetaP.addConstraint(new LessEqualConstraint(1));
+        zetaP.addConstraint(new GreaterEqualConstraint(0));
+        if(config.grab(zetaP)) {
+          zeta = zetaP.doubleValue();
+        }
+        
+        LongParameter nextLeaveMoreOutElementMethodSeedP = new LongParameter(NEXT_LEAVE_MORE_OUT_ELEMENT_METHOD_SEED_ID, Long.parseLong("5432"));
+        if(config.grab(nextLeaveMoreOutElementMethodSeedP)) {
+          nextLeaveMoreOutElementMethodSeed = nextLeaveMoreOutElementMethodSeedP.getValue();
+        }
+        
+        Flag randomSamplingP = new Flag(RANDOM_SAMPLING_ID);
+        if(config.grab(randomSamplingP)) {
+          randomSampling = randomSamplingP.getValue();
+        }
+        
+        if(randomSampling) {      
+          LongParameter randomSamplingSeedP = new LongParameter(RANDOM_SAMPLING_SEED_ID, Long.parseLong("4567"));
+          if(config.grab(randomSamplingSeedP)) {
+            randomSamplingSeed = nextLeaveMoreOutElementMethodSeedP.getValue();
+          }
+        
+          Flag alternateRandomSamplingP = new Flag(ALTERNATE_RANDOM_SAMPLING_ID);
+          if(config.grab(alternateRandomSamplingP)) {
+            alternateRandomSampling = alternateRandomSamplingP.getValue();
+          }
+          
+          IntParameter randomSamplingDepthP = new IntParameter(RANDOM_SAMPLING_DEPTH_ID, 1);
+          randomSamplingDepthP.addConstraint(new GreaterConstraint(0));
+          if(config.grab(randomSamplingDepthP)) {
+            countRandomSamplingDepth = randomSamplingDepthP.getValue();
+          }
+        }
       }
-      
-      Flag randomSamplingP = new Flag(RANDOM_SAMPLING_ID);
-      if(config.grab(randomSamplingP)) {
-        randomSampling = randomSamplingP.getValue();
-      }
-      
-      LongParameter randomSamplingSeedP = new LongParameter(RANDOM_SAMPLING_SEED_ID, Long.parseLong("4567"));
-      if(config.grab(randomSamplingSeedP)) {
-        randomSamplingSeed = nextLeaveMoreOutElementMethodSeedP.getValue();
-      }
-      
-      Flag alternateRandomSamplingP = new Flag(ALTERNATE_RANDOM_SAMPLING_ID);
-      if(config.grab(alternateRandomSamplingP)) {
-        alternateRandomSampling = alternateRandomSamplingP.getValue();
-      }
-      
-      IntParameter randomSamplingDepthP = new IntParameter(RANDOM_SAMPLING_DEPTH_ID, 1);
-      randomSamplingDepthP.addConstraint(new GreaterConstraint(0));
-      if(config.grab(randomSamplingDepthP)) {
-        countRandomSamplingDepth = randomSamplingDepthP.getValue();
-      }
-      
     }
 
    
